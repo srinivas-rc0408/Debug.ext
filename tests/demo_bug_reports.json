@@ -1,0 +1,148 @@
+{
+  "description": "Debug.ext Demo Bug Reports — pre-analyzed samples for dashboard testing and hackathon demos.",
+  "version": "1.0.0",
+  "raw_inputs": [
+    {
+      "id": "sample_payment_gateway",
+      "url": "https://example-shop.com/checkout",
+      "dom_title": "Checkout - Example Shop",
+      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "console_logs": [
+        "[error] Failed to load Stripe SDK: net::ERR_CONNECTION_REFUSED",
+        "[error] Uncaught TypeError: Cannot read properties of undefined (reading 'chargeId') at checkout.js:142:28",
+        "[error] PaymentForm.handleSubmit: Stripe instance is null",
+        "[warn] Retrying payment initialization (attempt 3/3)...",
+        "[error] All payment retries exhausted. User cannot complete checkout."
+      ],
+      "highlighted_text": "",
+      "active_element_html": "<button id=\"pay-now-btn\" class=\"btn-primary\" disabled>Processing...</button>",
+      "raw_error": "Uncaught TypeError: Cannot read properties of undefined (reading 'chargeId')\n    at PaymentForm.handleSubmit (checkout.js:142:28)\n    at HTMLButtonElement.<anonymous> (checkout.js:89:15)\n    at processQueue (react-dom.production.min.js:1:4820)",
+      "additional_context": "Users reporting blank payment form after clicking Pay Now. Affects ~30% of checkout attempts since last deploy."
+    },
+    {
+      "id": "sample_auth_timeout",
+      "url": "https://app.example.com/auth/callback?code=abc123&state=xyz",
+      "dom_title": "Redirecting...",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "console_logs": [
+        "[warn] OAuth callback: token exchange initiated",
+        "[error] AuthProvider: session.setToken() called but token is expired (exp: 1700000000)",
+        "[warn] React Router: redirect loop detected at /auth/callback → /login → /auth/callback",
+        "[error] ERR_TOO_MANY_REDIRECTS: Maximum redirect limit reached",
+        "[error] AuthGuard: isAuthenticated() returning stale value from localStorage",
+        "[warn] SessionManager: clearSession() not clearing httpOnly cookie"
+      ],
+      "highlighted_text": "This page isn't working. app.example.com redirected you too many times.",
+      "active_element_html": "<div id=\"auth-spinner\" class=\"loading-container\"><div class=\"spinner\"></div></div>",
+      "raw_error": "ERR_TOO_MANY_REDIRECTS\n\nRedirect chain:\n  /auth/callback → 302 → /login → 302 → /auth/callback → 302 → /login ...\n\nReact Router error: Maximum update depth exceeded.",
+      "additional_context": "Users stuck in login loop after OAuth callback. Started after migrating from express-session to JWT tokens. Only affects Chrome users."
+    },
+    {
+      "id": "sample_slow_sql",
+      "url": "https://admin.example.com/api/v2/users?page=1&limit=50&sort=created_at",
+      "dom_title": "Admin Dashboard - Users",
+      "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "console_logs": [
+        "[warn] API request to /api/v2/users exceeded 10s threshold",
+        "[error] HTTP 504 Gateway Timeout after 30.2s",
+        "[warn] Retry 1/3: GET /api/v2/users",
+        "[error] HTTP 504 Gateway Timeout after 30.0s (retry 1)",
+        "[error] All retries failed. Displaying cached data (stale: 2h 15m).",
+        "[warn] DataGrid: rendering with stale data warning"
+      ],
+      "highlighted_text": "",
+      "active_element_html": "<div class=\"data-table-container\" data-loading=\"true\"><div class=\"skeleton-loader\"></div></div>",
+      "raw_error": "HTTP 504 Gateway Timeout\n\nBackend trace:\npsql: EXPLAIN ANALYZE SELECT u.*, COUNT(o.id) as order_count FROM users u LEFT JOIN orders o ON u.id = o.user_id GROUP BY u.id ORDER BY u.created_at DESC LIMIT 50 OFFSET 0;\n\nSeq Scan on users (cost=0.00..425612.50 rows=2150000 width=312) (actual time=28542.123..28542.123 rows=0 loops=1)\n  -> Hash Left Join (cost=125000.00..425612.50 rows=2150000 width=316)\n       Hash Cond: (u.id = o.user_id)\n       -> Seq Scan on users u (cost=0.00..85000.00 rows=2150000 width=312)\n       -> Hash (cost=75000.00..75000.00 rows=4000000 width=8)\n             -> Seq Scan on orders o (cost=0.00..75000.00 rows=4000000 width=8)\nPlanning Time: 0.856 ms\nExecution Time: 28543.001 ms",
+      "additional_context": "Admin dashboard users page timing out consistently. Database has 2.15M users and 4M orders. No indexes on orders.user_id. Previous developer left TODO comment about adding index."
+    }
+  ],
+  "analyzed_results": [
+    {
+      "bug_id": "e7f3a1b2-4c5d-6e7f-8a9b-0c1d2e3f4a5b",
+      "timestamp": "2026-08-08T04:00:00Z",
+      "bug_summary": "Payment Gateway failure: Stripe SDK fails to load, causing TypeError on chargeId access during checkout",
+      "category": "Payment",
+      "severity": "Critical",
+      "priority": "P0",
+      "confidence_score": 0.92,
+      "affected_component": "checkout/PaymentForm.tsx",
+      "probable_root_cause": "The Stripe SDK fails to load due to a network connectivity issue (ERR_CONNECTION_REFUSED), likely caused by a Content Security Policy (CSP) change or network configuration issue in the recent deployment. When the SDK fails to load, the Stripe instance is null, but the code at checkout.js:142 attempts to access chargeId on the undefined response object without null-checking the Stripe instance. The retry mechanism (3 attempts) also fails, confirming a persistent infrastructure issue rather than a transient network glitch.",
+      "technical_analysis": "The failure chain is: 1) Stripe SDK CDN request is refused (CSP or firewall rule), 2) PaymentForm initializes with stripe=null, 3) User clicks Pay Now, handleSubmit() is called, 4) Code tries to access response.chargeId but response is undefined because stripe.createPaymentMethod() was never called (stripe is null), 5) TypeError thrown at line 142. The 30% failure rate suggests the CSP change or DNS issue affects a subset of CDN edge nodes or certain geographic regions. The disabled button state ('Processing...') indicates the UI doesn't properly reset after failure.",
+      "suggested_fix": {
+        "explanation": "Add null-guard for the Stripe instance before calling payment methods, implement proper error state recovery in the UI, and verify CSP headers allow Stripe SDK domain (js.stripe.com).",
+        "code_snippet": "// PaymentForm.tsx - handleSubmit()\nasync handleSubmit(e) {\n  e.preventDefault();\n  \n  if (!this.stripe) {\n    this.setState({\n      error: 'Payment system is temporarily unavailable. Please refresh and try again.',\n      processing: false,\n      buttonDisabled: false\n    });\n    // Log for monitoring\n    console.error('Stripe instance not initialized - check CSP and network');\n    return;\n  }\n  \n  try {\n    const { paymentMethod, error } = await this.stripe.createPaymentMethod({\n      type: 'card',\n      card: this.cardElement,\n    });\n    \n    if (error) {\n      this.setState({ error: error.message, processing: false });\n      return;\n    }\n    \n    // Safe access with optional chaining\n    const chargeId = paymentMethod?.id;\n    if (!chargeId) {\n      throw new Error('Payment method creation returned no ID');\n    }\n    \n    await this.processPayment(chargeId);\n  } catch (err) {\n    this.setState({ error: err.message, processing: false, buttonDisabled: false });\n  }\n}\n\n// Also check CSP headers in server config:\n// Content-Security-Policy: script-src 'self' https://js.stripe.com;"
+      },
+      "missing_information": [
+        "Server-side CSP headers configuration file (nginx.conf or helmet config)",
+        "Recent deployment diff (last 48 hours) affecting checkout or CDN settings",
+        "Geographic distribution of affected users (to isolate CDN edge issue)",
+        "Stripe Dashboard status for any ongoing incidents"
+      ],
+      "metrics": {
+        "estimated_fix_time_hours": 2.5,
+        "business_impact_score": 9.5,
+        "reproducibility_probability": 0.85
+      },
+      "model_sources": ["inkling", "glm_5.2", "minimax_m3"],
+      "raw_input_preview": "URL: https://example-shop.com/checkout\nPage Title: Checkout - Example Shop\nError: Uncaught TypeError: Cannot read properties of undefined (reading 'chargeId')"
+    },
+    {
+      "bug_id": "b2c3d4e5-6f7a-8b9c-0d1e-2f3a4b5c6d7e",
+      "timestamp": "2026-08-08T04:05:00Z",
+      "bug_summary": "Authentication infinite redirect loop between /auth/callback and /login due to JWT token expiry race condition",
+      "category": "Authentication",
+      "severity": "High",
+      "priority": "P1",
+      "confidence_score": 0.87,
+      "affected_component": "auth/AuthProvider.tsx + auth/SessionManager.ts",
+      "probable_root_cause": "After migrating from express-session to JWT tokens, there is a race condition in the OAuth callback flow: 1) The callback receives a valid auth code, 2) Token exchange succeeds and returns a JWT, 3) setToken() stores the JWT in localStorage, 4) BUT the JWT's 'exp' claim is set to a past timestamp (server clock skew or incorrect token generation), 5) AuthGuard.isAuthenticated() immediately reads the token, finds it expired, and redirects to /login, 6) /login sees the auth code in URL params and redirects back to /auth/callback, creating an infinite loop. The issue is compounded by SessionManager.clearSession() not clearing the httpOnly cookie from the old express-session system, which causes stale session data to interfere with the new JWT flow.",
+      "technical_analysis": "The redirect chain confirms a classic OAuth callback loop pattern. The key evidence is: 'session.setToken() called but token is expired (exp: 1700000000)' — this Unix timestamp (Nov 2023) is clearly in the past, indicating the token server is generating tokens with incorrect expiry times. The Chrome-only behavior may be due to Chrome's stricter redirect limit (20) compared to other browsers, or differences in how Chrome handles the SameSite cookie attribute for the leftover httpOnly session cookie. The 'isAuthenticated() returning stale value from localStorage' suggests localStorage is being read synchronously before the async token refresh completes. The fix requires: 1) Fixing server-side token expiry calculation, 2) Adding clock skew tolerance to client-side token validation, 3) Removing the legacy session cookie cleanup, 4) Adding redirect loop detection in the AuthGuard.",
+      "suggested_fix": {
+        "explanation": "Fix the token validation to handle clock skew, add redirect loop detection, and clean up legacy session cookies during the migration.",
+        "code_snippet": "// AuthGuard.tsx\nconst MAX_REDIRECTS = 3;\nconst CLOCK_SKEW_TOLERANCE_MS = 60000; // 60 seconds\n\nfunction isTokenValid(token: string): boolean {\n  try {\n    const payload = JSON.parse(atob(token.split('.')[1]));\n    const now = Date.now() / 1000;\n    // Add clock skew tolerance\n    return payload.exp > (now - CLOCK_SKEW_TOLERANCE_MS / 1000);\n  } catch {\n    return false;\n  }\n}\n\n// Redirect loop detection\nfunction detectRedirectLoop(): boolean {\n  const key = 'auth_redirect_count';\n  const count = parseInt(sessionStorage.getItem(key) || '0');\n  if (count >= MAX_REDIRECTS) {\n    sessionStorage.removeItem(key);\n    return true; // Loop detected\n  }\n  sessionStorage.setItem(key, String(count + 1));\n  setTimeout(() => sessionStorage.removeItem(key), 10000);\n  return false;\n}\n\n// SessionManager.ts - Clean up legacy cookies\nfunction clearLegacySession(): void {\n  document.cookie = 'connect.sid=; expires=Thu, 01 Jan 1970; path=/; SameSite=Lax';\n  document.cookie = 'session=; expires=Thu, 01 Jan 1970; path=/; SameSite=Lax';\n}"
+      },
+      "missing_information": [
+        "Server-side JWT token generation code (to verify exp claim calculation)",
+        "NTP sync status of the authentication server",
+        "Whether the issue affects users in specific timezones",
+        "express-session to JWT migration checklist and cookie cleanup status"
+      ],
+      "metrics": {
+        "estimated_fix_time_hours": 4.0,
+        "business_impact_score": 8.0,
+        "reproducibility_probability": 0.75
+      },
+      "model_sources": ["inkling", "glm_5.2", "minimax_m3"],
+      "raw_input_preview": "URL: https://app.example.com/auth/callback?code=abc123&state=xyz\nPage Title: Redirecting...\nError: ERR_TOO_MANY_REDIRECTS"
+    },
+    {
+      "bug_id": "c3d4e5f6-7a8b-9c0d-1e2f-3a4b5c6d7e8f",
+      "timestamp": "2026-08-08T04:10:00Z",
+      "bug_summary": "Admin users API returns 504 Gateway Timeout due to unindexed sequential scan on 2.15M row users table joined with 4M orders",
+      "category": "Performance",
+      "severity": "High",
+      "priority": "P1",
+      "confidence_score": 0.95,
+      "affected_component": "api/v2/users/UserRepository.ts + PostgreSQL schema",
+      "probable_root_cause": "The GET /api/v2/users endpoint executes a query that performs a sequential scan on both the 'users' table (2.15M rows) and the 'orders' table (4M rows) due to a missing index on orders.user_id. The EXPLAIN ANALYZE output confirms: 1) Full sequential scan on users (cost: 85,000), 2) Full sequential scan on orders for hash join (cost: 75,000), 3) Total execution time: 28.5 seconds, which exceeds the 30-second gateway timeout. The query also uses GROUP BY u.id with COUNT(o.id) which requires materializing the entire join result before aggregation. The previous developer's TODO comment about adding an index confirms this was a known tech debt item.",
+      "technical_analysis": "The query plan reveals several optimization opportunities:\n\n1. **Missing Index**: orders.user_id has no index, forcing a sequential scan of 4M rows for every join. Adding a B-tree index will reduce the hash join cost from O(n) to O(log n) lookups.\n\n2. **Unnecessary Full Table Scan**: The LIMIT 50 with ORDER BY created_at DESC should use an index scan on users.created_at, but without an index, PostgreSQL falls back to sorting the entire 2.15M row result set.\n\n3. **Suboptimal Query Pattern**: LEFT JOIN + GROUP BY + COUNT is expensive at this scale. A correlated subquery or materialized view for order counts would be significantly faster.\n\n4. **No Query Timeout**: The application has no statement_timeout configured, allowing the 28.5s query to run until the gateway times out at 30s.\n\n5. **Caching Gap**: The 2h 15m stale cache fallback suggests the cache TTL is too short or cache invalidation is too aggressive for this expensive query.",
+      "suggested_fix": {
+        "explanation": "Add the missing database index, optimize the query pattern, and implement query timeout protection.",
+        "code_snippet": "-- 1. Add missing index (run during low-traffic window)\nCREATE INDEX CONCURRENTLY idx_orders_user_id ON orders (user_id);\n\n-- 2. Add index for sort optimization\nCREATE INDEX CONCURRENTLY idx_users_created_at_desc ON users (created_at DESC);\n\n-- 3. Optimized query using lateral join\nSELECT u.*, sub.order_count\nFROM users u\nLEFT JOIN LATERAL (\n  SELECT COUNT(*) as order_count\n  FROM orders o\n  WHERE o.user_id = u.id\n) sub ON true\nORDER BY u.created_at DESC\nLIMIT 50 OFFSET 0;\n\n-- 4. Set statement timeout as safety net\nSET statement_timeout = '10s';\n\n-- 5. Consider materialized view for dashboard\nCREATE MATERIALIZED VIEW mv_user_order_counts AS\nSELECT u.id, COUNT(o.id) as order_count\nFROM users u LEFT JOIN orders o ON u.id = o.user_id\nGROUP BY u.id;\n\nCREATE UNIQUE INDEX ON mv_user_order_counts (id);\n-- Refresh periodically: REFRESH MATERIALIZED VIEW CONCURRENTLY mv_user_order_counts;"
+      },
+      "missing_information": [
+        "Current PostgreSQL version and configuration (shared_buffers, work_mem, effective_cache_size)",
+        "Whether orders.user_id has a foreign key constraint (which might implicitly create an index in some ORMs)",
+        "Traffic patterns for the admin users page (frequency of queries)",
+        "Application-level caching strategy (Redis, in-memory, CDN)"
+      ],
+      "metrics": {
+        "estimated_fix_time_hours": 1.5,
+        "business_impact_score": 6.5,
+        "reproducibility_probability": 0.98
+      },
+      "model_sources": ["inkling", "glm_5.2", "minimax_m3"],
+      "raw_input_preview": "URL: https://admin.example.com/api/v2/users?page=1&limit=50&sort=created_at\nPage Title: Admin Dashboard - Users\nError: HTTP 504 Gateway Timeout"
+    }
+  ]
+}
