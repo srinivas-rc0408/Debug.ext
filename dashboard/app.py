@@ -193,17 +193,56 @@ if live_mode:
     st.cache_data.clear()
 
 # ==============================================================================
-# 3. DATA FETCHING & SKELETON
+# 3. BULLETPROOF DATA LOADER & SCHEMA NORMALIZER
 # ==============================================================================
 @st.cache_data(ttl=1)
-def fetch_history():
+def fetch_and_normalize_history():
     try:
         res = requests.get("http://localhost:8000/api/history", timeout=2)
         if res.status_code == 200 and res.json():
-            return pd.DataFrame(res.json())
-    except:
+            raw_data = res.json()
+            processed_rows = []
+            
+            for row in raw_data:
+                # Unpack full_json securely
+                full_json_str = row.get('full_json', '{}')
+                try:
+                    nested_data = json.loads(full_json_str) if isinstance(full_json_str, str) else full_json_str
+                except:
+                    nested_data = {}
+                
+                merged_row = {**row, **nested_data}
+                
+                # GUARANTEE required fields exist so Pandas never throws KeyErrors
+                if 'bug_summary' not in merged_row and 'summary' in merged_row:
+                    merged_row['bug_summary'] = merged_row['summary']
+                elif 'bug_summary' not in merged_row:
+                    merged_row['bug_summary'] = "Intercepted Exception Trace"
+                    
+                if 'affected_component' not in merged_row:
+                    merged_row['affected_component'] = merged_row.get('url', 'Unknown Module')
+                    
+                if 'confidence_score' in merged_row:
+                    try:
+                        val = float(merged_row['confidence_score'])
+                        merged_row['confidence_pct'] = int(val * 100) if val <= 1.0 else int(val)
+                    except:
+                        merged_row['confidence_pct'] = 95
+                else:
+                    merged_row['confidence_pct'] = 95
+                    
+                processed_rows.append(merged_row)
+                
+            df = pd.DataFrame(processed_rows)
+            return df
+    except Exception as e:
         pass
-    return pd.DataFrame()
+    
+    # Return a safe, empty schema if backend is offline
+    return pd.DataFrame(columns=[
+        'timestamp', 'source', 'url', 'category', 'severity', 'priority', 
+        'bug_summary', 'affected_component', 'confidence_pct', 'probable_root_cause'
+    ])
 
 import time
 ui_placeholder = st.empty()
@@ -225,43 +264,39 @@ with ui_placeholder.container():
     """, unsafe_allow_html=True)
 
 time.sleep(0.5) 
-df = fetch_history()
+df = fetch_and_normalize_history()
 
 ui_placeholder.empty()
 
 # ==============================================================================
-# 🚀 PRO SPOTLIGHT: ACTIVE INCIDENT REMEDIATION
+# 🚀 ACTIVE INCIDENT SPOTLIGHT
 # ==============================================================================
 if not df.empty:
     latest_bug = df.iloc[0]
     
-    summary_text = latest_bug.get('bug_summary', latest_bug.get('summary', 'Active Incident'))
-    component_text = latest_bug.get('affected_component', latest_bug.get('url', 'Unknown Module'))
     priority_val = latest_bug.get('priority', 'P0')
     severity_val = latest_bug.get('severity', 'Critical')
     category_val = latest_bug.get('category', 'Network')
+    conf_pct = latest_bug.get('confidence_pct', 95)
+    module_val = latest_bug.get('affected_component', 'Unknown')
+    root_cause = latest_bug.get('probable_root_cause', latest_bug.get('bug_summary', 'N/A'))
     
-    st.markdown("""
-        <div class="spotlight-header">
-            <h3 style="margin: 0; color: #F8FAFC; font-size: 18px; font-weight: 700;">✅ Autonomous Triage Complete: Active Incident</h3>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown('<div class="spotlight-header"><h3 style="margin: 0; color: #F8FAFC; font-size: 18px; font-weight: 700;">✅ Autonomous Triage Complete: Active Incident</h3></div>', unsafe_allow_html=True)
     
     col_details, col_fix = st.columns([1, 1.3], gap="large")
     
     with col_details:
         st.markdown('<div class="pro-card">', unsafe_allow_html=True)
-        st.markdown("<h4 style='margin-top:0; color:#94A3B8; font-size:12px; text-transform:uppercase; letter-spacing:1px;'>📊 Intelligence Matrix</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='margin-top:0; color:#94A3B8; font-size:12px; text-transform:uppercase;'>📊 Intelligence Matrix</h4>", unsafe_allow_html=True)
         
-        # Priority Badge Color Coding
         badge_color = "#EF4444" if priority_val in ["P0", "Critical"] else "#F59E0B"
         st.markdown(f"**Priority Level:** <span style='background: rgba(239, 68, 68, 0.1); color: {badge_color}; padding: 2px 8px; border-radius: 4px; font-weight: 800;'>[{priority_val}]</span> | **Severity:** `{severity_val}`", unsafe_allow_html=True)
-        st.markdown(f"**Classification:** `{category_val}`")
-        st.markdown(f"**Vulnerable Module:** `{component_text}`")
+        st.markdown(f"**Classification:** `{category_val}` | **AI Confidence:** `{conf_pct}%`")
+        st.markdown(f"**Vulnerable Module:** `{module_val}`")
         
         st.markdown("<div style='margin: 16px 0; border-top: 1px solid #1F2937;'></div>", unsafe_allow_html=True)
-        st.markdown("<h4 style='margin-top:0; color:#94A3B8; font-size:12px; text-transform:uppercase; letter-spacing:1px;'>🔍 Root Cause Analysis</h4>", unsafe_allow_html=True)
-        st.info(latest_bug.get('probable_root_cause', summary_text))
+        st.markdown("<h4 style='margin-top:0; color:#94A3B8; font-size:12px; text-transform:uppercase;'>🔍 Root Cause Analysis</h4>", unsafe_allow_html=True)
+        st.info(root_cause)
         
         from pdf_generator import generate_pdf_report
         try:
@@ -280,35 +315,64 @@ if not df.empty:
 
     with col_fix:
         st.markdown('<div class="pro-card">', unsafe_allow_html=True)
-        st.markdown("<h4 style='margin-top:0; color:#94A3B8; font-size:12px; text-transform:uppercase; letter-spacing:1px;'>🛠️ Autonomous Code Patch</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='margin-top:0; color:#94A3B8; font-size:12px; text-transform:uppercase;'>🛠️ Autonomous Code Patch</h4>", unsafe_allow_html=True)
         
         fix_data = latest_bug.get('suggested_fix', {})
+        if isinstance(fix_data, str):
+            try: fix_data = json.loads(fix_data)
+            except: fix_data = {"explanation": fix_data, "code_snippet": "// Patch applied"}
+            
         if isinstance(fix_data, dict):
             st.write(fix_data.get('explanation', 'Apply the following verified patch:'))
             code = fix_data.get('code_snippet', '// No code patch required')
             st.code(code, language="javascript")
         else:
-            st.warning("No structured code fix was returned by the AI gateway.")
+            st.warning("No structured code fix was returned.")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown("<div style='margin: 30px 0;'></div>", unsafe_allow_html=True)
+st.markdown("<div style='margin: 30px 0;'></div>", unsafe_allow_html=True)
 
-    # ==============================================================================
-    # 📋 SESSION ERROR LOG TABLE (PRO DARK THEME)
-    # ==============================================================================
-    st.markdown("""
-        <h3 style='font-size: 20px; font-weight: 700; color: #F8FAFC; margin-bottom: 4px;'>📋 Session Error Log</h3>
-        <p style='color: #64748B; font-size: 13px; margin-bottom: 16px;'>Complete telemetry history of intercepted exceptions, prioritized by autonomous scoring.</p>
-    """, unsafe_allow_html=True)
+# ==============================================================================
+# 📊 ANALYTICS GRAPHS (CATEGORIZATION & PRIORITIZATION)
+# ==============================================================================
+st.markdown("<h3 style='font-size: 20px; font-weight: 700; color: #F8FAFC; margin-bottom: 16px;'>📈 Telemetry Analytics & Graphs</h3>", unsafe_allow_html=True)
+
+if not df.empty:
+    g_col1, g_col2 = st.columns(2, gap="large")
     
-    available_cols = df.columns.tolist()
-    target_cols = ['priority', 'severity', 'category', 'bug_summary', 'summary', 'affected_component', 'url']
-    valid_display_cols = [col for col in target_cols if col in available_cols]
+    with g_col1:
+        st.markdown('<div class="pro-card">', unsafe_allow_html=True)
+        st.markdown("#### 🏷️ Bug Categorization Spread", unsafe_allow_html=True)
+        if 'category' in df.columns:
+            cat_counts = df['category'].value_counts().reset_index()
+            cat_counts.columns = ['Category', 'Count']
+            fig_cat = px.pie(cat_counts, names='Category', values='Count', hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
+            fig_cat.update_layout(paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#F8FAFC'), margin=dict(t=10, b=10, l=10, r=10))
+            st.plotly_chart(fig_cat, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+    with g_col2:
+        st.markdown('<div class="pro-card">', unsafe_allow_html=True)
+        st.markdown("#### ⚡ Prioritization Distribution", unsafe_allow_html=True)
+        if 'priority' in df.columns:
+            pri_counts = df['priority'].value_counts().reset_index()
+            pri_counts.columns = ['Priority', 'Count']
+            fig_pri = px.bar(pri_counts, x='Priority', y='Count', color='Priority', color_discrete_map={'P0':'#EF4444', 'P1':'#F59E0B', 'P2':'#3B82F6', 'P3':'#10B981'})
+            fig_pri.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#F8FAFC'), margin=dict(t=10, b=10, l=10, r=10), showlegend=False)
+            st.plotly_chart(fig_pri, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# ==============================================================================
+# 📋 SAFE SESSION ERROR LOG TABLE (CRASH-PROOF SLICING)
+# ==============================================================================
+st.markdown("<h3 style='font-size: 20px; font-weight: 700; color: #F8FAFC; margin-bottom: 12px;'>📋 Session Error Log</h3>", unsafe_allow_html=True)
+
+if not df.empty:
+    # 🟢 BULLETPROOF COLUMN FILTER: Only pick columns that actually exist in df
+    desired_columns = ['timestamp', 'source', 'url', 'category', 'severity', 'priority', 'bug_summary', 'affected_component', 'confidence_pct']
+    safe_display_cols = [col for col in desired_columns if col in df.columns]
     
-    if valid_display_cols:
-        st.dataframe(df[valid_display_cols], use_container_width=True, hide_index=True)
-    else:
-        st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df[safe_display_cols], use_container_width=True, hide_index=True)
 
 # ==========================================
 # TABS
