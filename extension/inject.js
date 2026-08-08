@@ -119,8 +119,8 @@
         }
     };
 
-    // Attach listeners
-    window.addEventListener('error', onError);
-    window.addEventListener('unhandledrejection', onUnhandledRejection);
+    // Attach listeners in the capture phase (true) to intercept errors before frameworks swallow them
+    window.addEventListener('error', onError, true);
+    window.addEventListener('unhandledrejection', onUnhandledRejection, true);
     window.addEventListener('message', onSleepMessage);
 })();

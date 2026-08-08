@@ -184,49 +184,77 @@ def load_history():
 df = load_history()
 
 # ==========================================
-# 🚀 THE INSTANT HIGHLIGHT BLOCK
+# 🚀 1. THE AUTONOMOUS TRIAGE SPOTLIGHT
 # ==========================================
 if not df.empty:
-    # Grab the absolute latest bug processed by the AI
-    latest_bug = df.iloc[0] # Assumes backend returns newest first
+    latest_bug = df.iloc[0] # The most recent error
     
     st.markdown("""
     <div style="background: linear-gradient(90deg, #1E293B 0%, #0F172A 100%); 
-                padding: 20px; border-radius: 12px; border-left: 4px solid #EF4444; margin-bottom: 25px;">
-        <h4 style="margin-top: 0; color: #F8FAFC;">🚨 Latest Intercepted Exception</h4>
+                padding: 16px 24px; border-radius: 12px; border-left: 5px solid #EF4444; margin-bottom: 20px;">
+        <h3 style="margin: 0; color: #F8FAFC; font-size: 20px;">🚨 Active Incident: Action Required</h3>
     </div>
     """, unsafe_allow_html=True)
     
-    hl_col1, hl_col2 = st.columns([3, 1])
+    col_details, col_fix = st.columns([1, 1.2], gap="large")
     
-    with hl_col1:
-        st.markdown(f"**Priority:** `[{latest_bug.get('priority', 'P0')}]` | **Severity:** `{latest_bug.get('severity', 'Critical')}`")
+    with col_details:
+        st.markdown("#### 📊 Triage Analytics")
+        st.markdown(f"**Priority:** `<span style='color:#EF4444; font-weight:bold;'>[{latest_bug.get('priority', 'P0')}]</span>` | **Severity:** `{latest_bug.get('severity', 'Critical')}`", unsafe_allow_html=True)
         st.markdown(f"**Category:** `{latest_bug.get('category', 'Unknown')}`")
-        st.info(f"**Root Cause:** {latest_bug.get('probable_root_cause', 'N/A')}")
+        st.markdown(f"**Vulnerable Module:** `{latest_bug.get('affected_component', 'Unknown')}`")
         
-    with hl_col2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        # Generate the PDF in real-time for the latest bug
+        st.markdown("#### 🔍 Root Cause Detection")
+        st.info(latest_bug.get('probable_root_cause', 'N/A'))
+        
+        # Generates the downloadable PDF instantly
         from pdf_generator import generate_pdf_report
-        
-        # Convert pandas row back to a clean dictionary for the PDF generator
-        bug_dict = latest_bug.to_dict()
-        
         try:
-            pdf_bytes = generate_pdf_report(bug_dict)
+            pdf_bytes = generate_pdf_report(latest_bug.to_dict())
             st.download_button(
-                label="📄 Download PDF Report",
+                label="📄 Download Full PDF Report",
                 data=pdf_bytes,
-                file_name=f"Debug_ext_Report_{bug_dict.get('priority', 'P0')}.pdf",
+                file_name=f"Debug_ext_{latest_bug.get('priority', 'P0')}_Report.pdf",
                 mime="application/pdf",
                 width="stretch",
-                type="primary",
-                key="highlight_download"
+                type="primary"
             )
-        except Exception as e:
-            st.error("PDF engine rendering...")
+        except:
+            st.error("PDF Engine Offline")
+
+    with col_fix:
+        st.markdown("#### 🛠️ Autonomous Code Remediation")
+        fix_data = latest_bug.get('suggested_fix', {})
+        
+        if isinstance(fix_data, dict):
+            st.write(fix_data.get('explanation', 'Apply the following fix:'))
+            code = fix_data.get('code_snippet', '// No code provided')
+            st.code(code, language="javascript")
+        else:
+            st.warning("No structured code fix was returned by the AI gateway.")
 
     st.divider()
+
+    # ==========================================
+    # 📋 2. THE ERROR LOG TABLE
+    # ==========================================
+    st.markdown("### 📋 Session Error Log")
+    st.caption("Complete history of intercepted exceptions, categorized and prioritized.")
+    
+    # Render a beautiful, interactive SaaS data table
+    st.dataframe(
+        df[['priority', 'severity', 'category', 'bug_summary', 'affected_component']],
+        column_config={
+            "priority": st.column_config.TextColumn("Priority", width="small"),
+            "severity": st.column_config.TextColumn("Severity", width="small"),
+            "category": st.column_config.TextColumn("Category", width="medium"),
+            "bug_summary": st.column_config.TextColumn("Exception Trace", width="large"),
+            "affected_component": st.column_config.TextColumn("Module", width="medium")
+        },
+        use_container_width=True,
+        hide_index=True
+    )
+    st.markdown("<br><br>", unsafe_allow_html=True)
 
 # ==========================================
 # HEADER
