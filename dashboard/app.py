@@ -363,16 +363,40 @@ if not df.empty:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
-# 📋 SAFE SESSION ERROR LOG TABLE (CRASH-PROOF SLICING)
+# 📋 SESSION ERROR LOG & INLINE PROBLEM-SOLUTION MAPPING
 # ==============================================================================
-st.markdown("<h3 style='font-size: 20px; font-weight: 700; color: #F8FAFC; margin-bottom: 12px;'>📋 Session Error Log</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='font-size: 20px; font-weight: 700; color: #F8FAFC; margin-top: 40px; margin-bottom: 8px;'>📋 Prioritized Error Log & Remediation Directory</h3>", unsafe_allow_html=True)
+st.markdown("<p style='color: #64748B; font-size: 13px; margin-bottom: 20px;'>Click any intercepted incident below to inspect its detailed root cause and verified code solution.</p>", unsafe_allow_html=True)
 
 if not df.empty:
-    # 🟢 BULLETPROOF COLUMN FILTER: Only pick columns that actually exist in df
-    desired_columns = ['timestamp', 'source', 'url', 'category', 'severity', 'priority', 'bug_summary', 'affected_component', 'confidence_pct']
-    safe_display_cols = [col for col in desired_columns if col in df.columns]
-    
-    st.dataframe(df[safe_display_cols], use_container_width=True, hide_index=True)
+    for idx, row in df.iterrows():
+        pri = row.get('priority', 'P2')
+        sev = row.get('severity', 'Medium')
+        cat = row.get('category', 'General')
+        summary = row.get('bug_summary', row.get('summary', 'Incident Log'))
+        root_cause = row.get('probable_root_cause', 'N/A')
+        
+        # Dynamic badge coloring for prioritization
+        badge_color = "#EF4444" if pri in ["P0", "Critical"] else "#F59E0B" if pri == "P1" else "#3B82F6"
+        
+        with st.expander(f"[{pri}] {sev.upper()} | {cat} — {summary}"):
+            exp_col1, exp_col2 = st.columns([1, 1], gap="large")
+            
+            with exp_col1:
+                st.markdown(f"**Target URL / Module:** `{row.get('affected_component', row.get('url', 'Unknown'))}`")
+                st.markdown(f"**Classification:** `{cat}` | **Severity:** `{sev}`")
+                st.markdown("#### 🔍 Problem Statement & Root Cause")
+                st.info(root_cause)
+                
+            with exp_col2:
+                st.markdown("#### 🛠️ Verified Solution & Patch")
+                fix = row.get('suggested_fix', {})
+                if isinstance(fix, str):
+                    try: fix = json.loads(fix)
+                    except: fix = {"explanation": fix, "code_snippet": "// Solution applied"}
+                
+                st.write(fix.get('explanation', 'Review the remediation code patch below:'))
+                st.code(fix.get('code_snippet', '// No code patch provided'), language="javascript")
 
 # ==========================================
 # TABS
