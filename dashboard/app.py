@@ -22,34 +22,37 @@ st.set_page_config(
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
-    .stApp { background-color: #0F172A; color: #F8FAFC; font-family: 'Inter', sans-serif; }
-    .metric-card { background-color: #1E293B; padding: 20px; border-radius: 10px; border: 1px solid #334155; text-align: center; }
-    .metric-value { font-size: 28px; font-weight: bold; color: #6366F1; }
-    .metric-label { font-size: 12px; color: #94A3B8; text-transform: uppercase; letter-spacing: 1px; margin-top: 6px; }
-    .code-container { background: #0D1117; border: 1px solid rgba(148, 163, 184, 0.12); border-radius: 10px; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 12px; overflow-x: auto; }
-    #MainMenu { visibility: hidden; }
-    footer { visibility: hidden; }
-    header[data-testid="stHeader"] { display: none; }
+    /* Absolute Black Background */
+    .stApp { background-color: #000000; color: #F8FAFC; font-family: 'Inter', sans-serif; }
     
-    /* Style the sidebar 'Run AI Triage' button */
-    div[data-testid="stSidebar"] button {
-        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-        color: white !important;
-        border-radius: 8px;
+    /* Graphite Metric Cards with Neon Borders */
+    .metric-card {
+        background-color: #0A0A0A;
+        padding: 16px;
+        border-radius: 10px;
+        border: 1px solid #333333;
+        text-align: center;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    .metric-value { font-size: 26px; font-weight: bold; color: #6366F1; }
+    .metric-label { font-size: 11px; color: #94A3B8; text-transform: uppercase; letter-spacing: 1px; }
+    
+    /* Status Pill */
+    .status-pill {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 12px;
         font-weight: 600;
-        border: none;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    }
-    div[data-testid="stSidebar"] button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.4);
+        background: rgba(16, 185, 129, 0.1);
+        color: #10B981;
+        border: 1px solid #10B981;
     }
     
-    /* Make Inspection Panels look like sleek UI cards */
+    /* Sleek Expanders and Inputs */
     div[data-testid="stExpander"] {
-        background-color: #1e293b;
-        border: 1px solid #334155;
+        background-color: #0A0A0A;
+        border: 1px solid #222222;
         border-radius: 8px;
         margin-bottom: 10px;
     }
@@ -61,16 +64,23 @@ st.markdown("""
         color: #6366f1;
     }
     
-    .status-pill {
-        display: inline-block;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        background: rgba(16, 185, 129, 0.1);
-        color: #10B981;
-        border: 1px solid #10B981;
+    /* Upload Button Gradient */
+    div[data-testid="stSidebar"] button, div.stButton > button {
+        background: linear-gradient(135deg, #4F46E5 0%, #3730A3 100%);
+        color: white !important;
+        border: none;
+        border-radius: 6px;
+        transition: 0.3s;
     }
+    div.stButton > button:hover {
+        transform: scale(1.02);
+        box-shadow: 0 0 15px rgba(79, 70, 229, 0.4);
+    }
+    
+    .code-container { background: #0D1117; border: 1px solid rgba(148, 163, 184, 0.12); border-radius: 10px; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 12px; overflow-x: auto; }
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+    header[data-testid="stHeader"] { display: none; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -115,7 +125,14 @@ def load_history():
                 return df
     except Exception:
         pass
-    return pd.DataFrame()
+    
+    # CRITICAL FIX: Return a structured empty dataframe so Pandas NEVER crashes
+    return pd.DataFrame(columns=[
+        'summary', 'category', 'severity', 'priority', 
+        'confidence', 'confidence_pct', 'affected_component', 
+        'probable_root_cause', 'suggested_fix', 'missing_information',
+        'source', 'url', 'timestamp'
+    ])
 
 df = load_history()
 
@@ -258,27 +275,32 @@ with tab2:
         
         # Add Visual Analytics Chart
         st.markdown("##### Most Vulnerable Modules")
-        valid_mods = df[~df['affected_component'].isin(['Unknown', 'unknown', 'N/A', '', None])]
-        
-        if not valid_mods.empty:
-            mod_counts = valid_mods['affected_component'].value_counts().reset_index()
-            mod_counts.columns = ['Component', 'Failures']
+        # Check if df is not empty AND the column actually exists
+        if not df.empty and 'affected_component' in df.columns:
+            valid_mods = df[~df['affected_component'].isin(['Unknown', 'unknown', 'N/A', '', None])]
             
-            fig_bar = px.bar(
-                mod_counts, y='Component', x='Failures', orientation='h',
-                color_discrete_sequence=['#6366F1']
-            )
-            fig_bar.update_layout(
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(color='#F8FAFC'),
-                xaxis=dict(title="Failure Count", dtick=1, gridcolor="#334155"),
-                yaxis=dict(title=""),
-                margin=dict(l=20, r=20, t=20, b=40)
-            )
-            st.plotly_chart(fig_bar, width="stretch")
+            if not valid_mods.empty:
+                mod_counts = valid_mods['affected_component'].value_counts().reset_index()
+                mod_counts.columns = ['Component', 'Failures']
+                
+                fig_bar = px.bar(
+                    mod_counts, y='Component', x='Failures', orientation='h',
+                    color_discrete_sequence=['#6366F1']
+                )
+                # Make chart background transparent to match the black theme
+                fig_bar.update_layout(
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color='#F8FAFC'),
+                    xaxis=dict(title="Failure Count", dtick=1, gridcolor="#333333"),
+                    yaxis=dict(title=""),
+                    margin=dict(l=20, r=20, t=20, b=40)
+                )
+                st.plotly_chart(fig_bar, use_container_width=True)
+            else:
+                st.info("No module data available yet.")
         else:
-            st.info("No module data available yet.")
+            st.info("Awaiting initial bug telemetry...")
         
         st.markdown("#### 📋 History Details")
         for idx, row in filtered_df.iterrows():
