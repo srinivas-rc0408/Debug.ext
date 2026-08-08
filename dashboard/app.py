@@ -225,8 +225,30 @@ if not df.empty:
         else:
             payload = latest_bug_dict
             
-        report = TriageReport.model_validate(payload)
-        render_active_incident_spotlight(report)
+        try:
+            report = TriageReport.model_validate(payload)
+            render_active_incident_spotlight(report)
+        except Exception:
+            # Fallback for legacy DB rows (e.g. from seed_db.py)
+            fallback_payload = {
+                "category": payload.get("category", "Network"),
+                "priority": payload.get("priority", "P2"),
+                "confidence": int(float(payload.get("confidence_score", 0.95)) * 100) if payload.get("confidence_score") else 95,
+                "incident_summary": payload.get("bug_summary", "Legacy Incident"),
+                "root_cause_analysis": payload.get("probable_root_cause", "No root cause provided."),
+                "technical_execution_breakdown": [payload.get("technical_analysis", "Legacy technical analysis")] * 3,
+                "solution_summary": payload.get("suggested_fix", {}).get("explanation", "Legacy fix explanation") if isinstance(payload.get("suggested_fix"), dict) else "Legacy fix",
+                "code_patch": {
+                    "filename": payload.get("affected_component", "unknown.js"),
+                    "language": "javascript",
+                    "code": payload.get("suggested_fix", {}).get("code_snippet", "// No code provided") if isinstance(payload.get("suggested_fix"), dict) else "// No code provided"
+                },
+                "qa_checklist": payload.get("missing_information", ["Check logs", "Verify fix", "Test edge cases"]),
+                "config_notes": None
+            }
+            report = TriageReport.model_validate(fallback_payload)
+            render_active_incident_spotlight(report)
+            
     except Exception as e:
         st.error(f"Failed to render Active Incident Spotlight: Schema Mismatch. \n{e}")
 
@@ -346,11 +368,19 @@ with tab1:
                     
                     if res.status_code == 200:
                         bug_data = res.json()
-                        from pdf_generator import generate_pdf_report
+                        from pdf_generator import generate_triage_pdf
+                        from triage_prompt_engine import TriageReport
                         
                         # 3. SAVE TO SESSION STATE
                         st.session_state.triage_result = bug_data
-                        st.session_state.pdf_bytes = generate_pdf_report(bug_data)
+                        
+                        try:
+                            report_obj = TriageReport.model_validate(bug_data)
+                            st.session_state.pdf_bytes = generate_triage_pdf(report_obj)
+                        except Exception as e:
+                            st.error(f"Failed to generate PDF: {e}")
+                            st.session_state.pdf_bytes = b""
+                        
                         st.toast('Analysis Complete! PDF Ready.', icon='✅')
                 except Exception as e:
                     st.error(f"Gateway connection error: {e}")
