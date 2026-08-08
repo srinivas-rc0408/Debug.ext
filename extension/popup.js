@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('start-btn').addEventListener('click', async () => {
         const btn = document.getElementById('start-btn');
         const statusText = document.getElementById('status-text');
-        let timeLeft = 10; // 10 second burst
+        let timeLeft = 15; // Increased to 15 seconds for a smooth demo
 
         // 1. Instantly update UI
         btn.classList.add('btn-listening');
@@ -43,9 +43,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // 4. Timer finishes
             if (timeLeft <= 0) {
                 clearInterval(countdown);
-                btn.textContent = "Start Debugging (10 Sec)";
+                btn.textContent = "Start Debugging (15 Sec)";
                 btn.classList.remove('btn-listening');
-                if (statusText) statusText.textContent = "Auto-sleep engaged. Session complete.";
+                if (statusText) statusText.textContent = "Session complete. Routing to Dashboard...";
                 btn.disabled = false;
             }
         }, 1000);

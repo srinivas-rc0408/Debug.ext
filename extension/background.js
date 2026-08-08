@@ -1,9 +1,14 @@
-// Global Cooldown State (Manifest V3 keeps this in memory while active)
 let lastAlertTime = 0;
 const COOLDOWN_MS = 40000; // 40 seconds
+let isRouting = false; // State lock to prevent opening multiple tabs
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    // ==========================================
+    // 1. START DEBUGGING & AUTO-SLEEP TIMER
+    // ==========================================
     if (request.action === 'START_DEBUGGING') {
+        isRouting = false; // Reset the lock for the new session
+        
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs[0]) {
                 const tabId = tabs[0].id;
@@ -23,20 +28,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                         chrome.action.setBadgeText({ text: 'ON' });
                         chrome.action.setBadgeBackgroundColor({ color: '#10B981' });
 
-                        // Auto-sleep timer (10 seconds)
+                        // 🟢 THE 15-SECOND AUTONOMOUS TIMER
                         setTimeout(() => {
                             chrome.tabs.sendMessage(tabId, { action: 'SLEEP' }).catch(() => {});
                             chrome.action.setBadgeText({ text: 'SLEEP' });
                             chrome.action.setBadgeBackgroundColor({ color: '#64748B' });
-                        }, 10000);
+                            
+                            // PRO FIX: Force open the dashboard if an error didn't already trigger it
+                            if (!isRouting) {
+                                isRouting = true;
+                                chrome.tabs.create({ url: "http://localhost:8501" });
+                            }
+                        }, 15000); // 15 seconds
                     });
                 });
-
             }
         });
         return;
     }
 
+    // ==========================================
+    // 2. ERROR CAUGHT & AI PROCESSING
+    // ==========================================
     if (request.action === 'PROCESS_ERROR') {
         const now = Date.now();
         
@@ -86,8 +99,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             });
             
             // 2. STRICT BARRIER: ONLY OPEN DASHBOARD NOW
-            // The AI is 100% finished, so the dashboard will have the data ready.
-            chrome.tabs.create({ url: "http://localhost:8501" });
+            if (!isRouting) {
+                isRouting = true;
+                chrome.tabs.create({ url: "http://localhost:8501" });
+            }
         })
         .catch(err => console.error('Backend connection error:', err));
     }
