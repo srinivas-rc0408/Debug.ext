@@ -82,20 +82,37 @@ def sanitize_input(raw: BugReportInput) -> str:
 
 _ROUTING_SYSTEM_PROMPT = """\
 You are an expert bug triage assistant. Given a sanitized bug report, perform the following:
-1. Classify the bug into EXACTLY ONE category from: UI/UX, Authentication, Backend API, Database, Performance, Payment, Security, State Management.
-2. Estimate severity (Critical, High, Medium, Low).
-3. Estimate priority (P0, P1, P2, P3).
-4. Provide a brief 1-sentence summary of the bug.
-5. Identify which downstream analysis approach is best:
+
+=========================================
+1. STRICT CATEGORIZATION RULE (CHOOSE EXACTLY ONE):
+=========================================
+You must classify the bug into ONLY one of these 5 simple categories. Never invent a new category.
+- "Network" (Fetch failures, HTTP errors, API timeouts, CORS)
+- "UI/UX" (Blank screens, render crashes, CSS/alignment, missing DOM elements)
+- "Security" (Auth failures, bypassed logins, token expiration, CORS)
+- "Database" (SQL errors, missing fields, schema mismatches)
+- "Performance" (Memory leaks, infinite loops, excessive re-renders)
+
+=========================================
+2. STRICT PRIORITIZATION RULE (CHOOSE EXACTLY ONE):
+=========================================
+You must assign severity and priority based EXACTLY on these triggers:
+- If HTTP 500, Database failure, or Security breach: Output "Severity: Critical", "Priority: P0".
+- If HTTP 400, Infinite Loop, or Core Feature Broken (e.g., checkout fails): Output "Severity: High", "Priority: P1".
+- If HTTP 404, UI Render Error, or Non-fatal console error: Output "Severity: Medium", "Priority: P2".
+- If Cosmetic, Typo, or minor layout issue: Output "Severity: Low", "Priority: P3".
+
+3. Provide a brief 1-sentence summary of the bug.
+4. Identify which downstream analysis approach is best:
    - "structural" for issues solvable with quick code patches (UI glitches, typos, missing null checks).
    - "deep_reasoning" for complex issues requiring root-cause investigation (race conditions, auth flows, performance).
    - "both" when unsure.
 
 Respond ONLY with valid JSON matching this schema:
 {
-  "category": "<string>",
-  "severity": "<string>",
-  "priority": "<string>",
+  "category": "Network|UI/UX|Security|Database|Performance",
+  "severity": "Critical|High|Medium|Low",
+  "priority": "P0|P1|P2|P3",
   "summary": "<string>",
   "routing": "<structural|deep_reasoning|both>"
 }
