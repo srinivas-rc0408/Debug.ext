@@ -3,7 +3,7 @@ let lastAlertTime = 0;
 const COOLDOWN_MS = 40000; // 40 seconds
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'ACTIVATE_INTERCEPTOR') {
+    if (request.action === 'START_DEBUGGING') {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs[0]) {
                 const tabId = tabs[0].id;
@@ -23,12 +23,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                         chrome.action.setBadgeText({ text: 'ON' });
                         chrome.action.setBadgeBackgroundColor({ color: '#10B981' });
 
-                        // Auto-sleep timer (120 seconds)
+                        // Auto-sleep timer (10 seconds)
                         setTimeout(() => {
-                            chrome.tabs.sendMessage(tabId, { action: 'SLEEP' });
+                            chrome.tabs.sendMessage(tabId, { action: 'SLEEP' }).catch(() => {});
                             chrome.action.setBadgeText({ text: 'SLEEP' });
-                            chrome.action.setBadgeBackgroundColor({ color: '#6B7280' });
-                        }, 120000);
+                            chrome.action.setBadgeBackgroundColor({ color: '#64748B' });
+                        }, 10000);
                     });
                 });
 
