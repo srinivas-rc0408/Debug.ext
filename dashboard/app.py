@@ -9,6 +9,10 @@ from streamlit_autorefresh import st_autorefresh
 from utils import format_github_issue, format_jira_issue
 from pdf_generator import generate_pdf_report
 
+if "triage_result" not in st.session_state:
+    st.session_state.triage_result = None
+if "pdf_bytes" not in st.session_state:
+    st.session_state.pdf_bytes = None
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
@@ -169,63 +173,73 @@ tab1, tab2 = st.tabs(["🚀 Live Triage & Upload", "🗄️ Bug History"])
 
 # ─── TAB 1: LIVE TRIAGE & UPLOAD ─────────────────────────────────────────────
 with tab1:
-    st.subheader("📥 Unstructured QA Ingestion & Report Generator")
-    st.caption("Upload raw server logs, network traces, or unstructured QA descriptions.")
+    st.subheader("📥 Omni-Format QA Ingestion Engine")
+    st.caption("Upload unstructured error dumps, customer tickets, or tabular QA logs.")
     
-    # Advanced Drag and Drop File Uploader
-    uploaded_file = st.file_uploader("Drop .txt, .log, or .json files here:", type=['txt', 'log', 'json'])
+    # 1. UNLOCK ALL FILE TYPES
+    allowed_types = ['txt', 'log', 'json', 'csv', 'md', 'xml']
+    uploaded_file = st.file_uploader(
+        f"Drop {', '.join(allowed_types).upper()} files here:", 
+        type=allowed_types
+    )
     
-    # Fallback text area
     raw_text = st.text_area("Or paste raw text/stack trace directly:", height=150)
     
     if st.button("🚀 Run AI Triage & Generate Report", width="stretch"):
         payload_text = ""
         
-        # Read from file if uploaded, otherwise use text area
+        # 2. BULLETPROOF PARSING
         if uploaded_file is not None:
-            payload_text = uploaded_file.getvalue().decode("utf-8")
+            # errors="ignore" guarantees the dashboard won't crash on corrupted CSV/Log bytes
+            payload_text = uploaded_file.getvalue().decode("utf-8", errors="ignore")
+            
+            # Pro UI Touch: Show the judges that the file was instantly read
+            st.toast(f"Successfully ingested {uploaded_file.name} ({round(uploaded_file.size / 1024, 2)} KB)", icon="📂")
+            
         elif raw_text.strip():
             payload_text = raw_text.strip()
             
         if payload_text:
-            with st.spinner("Processing massive log payload through GLM 5.2..."):
+            with st.spinner("Processing massive payload through AI architecture..."):
                 try:
                     res = requests.post("http://localhost:8000/api/analyze", json={
                         "raw_report": payload_text, 
-                        "url": "QA Document Upload", 
+                        "url": f"File Upload: {uploaded_file.name if uploaded_file else 'Manual Paste'}", 
                         "source": "dashboard_upload"
                     })
                     
                     if res.status_code == 200:
                         bug_data = res.json()
-                        st.success("✅ Analysis Complete! Document successfully prioritized.")
+                        from pdf_generator import generate_pdf_report
                         
-                        # Generate the PDF in real-time
-                        pdf_bytes = generate_pdf_report(bug_data)
-                        st.toast('PDF Intelligence Report Generated successfully!', icon='📄')
-                        
-                        # Display the beautiful UI summary
-                        st.markdown(f"### 📌 Priority: {bug_data.get('priority')} | 🔴 Severity: {bug_data.get('severity')}")
-                        st.info(f"**Root Cause Identified:** {bug_data.get('probable_root_cause')}")
-                        
-                        # THE MONEY BUTTON: Download Official PDF
-                        st.download_button(
-                            label="📄 Download Official PDF Intelligence Report",
-                            data=pdf_bytes,
-                            file_name=f"Debug_ext_Report_{bug_data.get('priority')}.pdf",
-                            mime="application/pdf",
-                            width="stretch",
-                            type="primary"
-                        )
-                        
-                        with st.expander("View Full Raw JSON Result"):
-                            st.json(bug_data)
-                    else:
-                        st.error("Backend failed to process the document.")
+                        # 3. SAVE TO SESSION STATE
+                        st.session_state.triage_result = bug_data
+                        st.session_state.pdf_bytes = generate_pdf_report(bug_data)
+                        st.toast('Analysis Complete! PDF Ready.', icon='✅')
                 except Exception as e:
                     st.error(f"Gateway connection error: {e}")
         else:
             st.warning("⚠️ Please upload a document or paste a log trace first.")
+
+    # 4. PERSISTENT DISPLAY
+    if st.session_state.get('triage_result'):
+        data = st.session_state.triage_result
+        
+        # Clean UI Layout for Results
+        res_col1, res_col2 = st.columns([2, 1])
+        with res_col1:
+            st.markdown(f"### 📌 [{data.get('priority')}] {data.get('category')} Error")
+            st.info(f"**Root Cause Identified:** {data.get('probable_root_cause')}")
+        with res_col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.download_button(
+                label="📄 Download PDF Intelligence Report",
+                data=st.session_state.pdf_bytes,
+                file_name=f"Debug_ext_Report_{data.get('priority')}.pdf",
+                mime="application/pdf",
+                width="stretch",
+                type="primary"
+            )
 
 # ─── TAB 2: BUG HISTORY ──────────────────────────────────────────────────────
 with tab2:

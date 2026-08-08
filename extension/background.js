@@ -78,13 +78,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         .then(data => {
             // Store analysis and update the extension badge
             chrome.storage.local.set({ latestAnalysis: data });
+            // 1. SILENTLY UPDATE EXTENSION STATE
             chrome.action.setBadgeText({ text: '1' });
             chrome.action.setBadgeBackgroundColor({ color: '#EF4444' });
-            
-            // Silently update the notification to show analysis is complete
-            chrome.notifications.update(notificationId, {
-                message: `Analysis Complete! Priority: ${data.priority}\nClick extension to view fix.`
+            chrome.notifications.update(notificationId, { 
+                message: `Analysis Complete! Priority: ${data.priority}` 
             });
+            
+            // 2. STRICT BARRIER: ONLY OPEN DASHBOARD NOW
+            // The AI is 100% finished, so the dashboard will have the data ready.
+            chrome.tabs.create({ url: "http://localhost:8501" });
         })
         .catch(err => console.error('Backend connection error:', err));
     }

@@ -24,24 +24,31 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('start-btn').addEventListener('click', async () => {
         const btn = document.getElementById('start-btn');
         const statusText = document.getElementById('status-text');
+        let timeLeft = 10; // 10 second burst
 
-        // 1. Instantly update the UI to look active and pro
-        btn.textContent = "🟢 Intercepting... (10s)";
-        btn.classList.add('btn-listening'); // Applies the green gradient from your CSS
-        if (statusText) statusText.textContent = "Monitoring active tab for runtime errors.";
+        // 1. Instantly update UI
+        btn.classList.add('btn-listening');
         btn.disabled = true;
 
-        // 2. Send the activation message to background.js
+        // 2. Send activation message
         let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         chrome.runtime.sendMessage({ action: 'START_DEBUGGING', tabId: tab.id });
 
-        // 3. Reset the UI automatically when the 10 seconds are up
-        setTimeout(() => {
-            btn.textContent = "Start Debugging (10 Sec)";
-            btn.classList.remove('btn-listening');
-            if (statusText) statusText.textContent = "Auto-sleep engaged. Ready to restart.";
-            btn.disabled = false;
-        }, 10000); // 10 seconds
+        // 3. Start the Live Countdown
+        const countdown = setInterval(() => {
+            timeLeft--;
+            btn.textContent = `🟢 Intercepting... (${timeLeft}s)`;
+            if (statusText) statusText.textContent = "Analyzing DOM and Network requests in real-time.";
+
+            // 4. Timer finishes
+            if (timeLeft <= 0) {
+                clearInterval(countdown);
+                btn.textContent = "Start Debugging (10 Sec)";
+                btn.classList.remove('btn-listening');
+                if (statusText) statusText.textContent = "Auto-sleep engaged. Session complete.";
+                btn.disabled = false;
+            }
+        }, 1000);
     });
 
     document.getElementById('dashboard-btn').addEventListener('click', () => {
