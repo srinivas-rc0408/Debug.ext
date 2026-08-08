@@ -180,5 +180,6 @@ def generate_pdf_report(bug_data) -> bytes:
 
     return bytes(pdf.output(dest="S"))
 
-# 🟢 ALIAS EXPORT TO PREVENT ANY IMPORT ERRORS
-generate_triage_pdf = generate_pdf_report
+# 🟢 EXPOSE BOTH FUNCTION NAMES TO PREVENT IMPORT ERRORS
+def generate_triage_pdf(bug_data) -> bytes:
+    return generate_pdf_report(bug_data)
