@@ -24,26 +24,24 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('start-btn').addEventListener('click', async () => {
         const btn = document.getElementById('start-btn');
         const statusText = document.getElementById('status-text');
-        let timeLeft = 15; // Increased to 15 seconds for a smooth demo
+        let timeLeft = 15; 
 
-        // 1. Instantly update UI
+        // Instantly inject the spinner and update text
+        btn.innerHTML = `<span class="spinner"></span> Intercepting... (${timeLeft}s)`;
         btn.classList.add('btn-listening');
         btn.disabled = true;
 
-        // 2. Send activation message
         let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         chrome.runtime.sendMessage({ action: 'START_DEBUGGING', tabId: tab.id });
 
-        // 3. Start the Live Countdown
         const countdown = setInterval(() => {
             timeLeft--;
-            btn.textContent = `🟢 Intercepting... (${timeLeft}s)`;
+            btn.innerHTML = `<span class="spinner"></span> Intercepting... (${timeLeft}s)`;
             if (statusText) statusText.textContent = "Analyzing DOM and Network requests in real-time.";
 
-            // 4. Timer finishes
             if (timeLeft <= 0) {
                 clearInterval(countdown);
-                btn.textContent = "Start Debugging (15 Sec)";
+                btn.innerHTML = "Start Debugging (15 Sec)";
                 btn.classList.remove('btn-listening');
                 if (statusText) statusText.textContent = "Session complete. Routing to Dashboard...";
                 btn.disabled = false;
