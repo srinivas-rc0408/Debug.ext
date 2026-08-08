@@ -129,7 +129,7 @@ def load_history():
     # CRITICAL FIX: Return a structured empty dataframe so Pandas NEVER crashes
     return pd.DataFrame(columns=[
         'summary', 'category', 'severity', 'priority', 
-        'confidence', 'confidence_pct', 'affected_component', 
+        'confidence', 'confidence_pct', 'component', 
         'probable_root_cause', 'suggested_fix', 'missing_information',
         'source', 'url', 'timestamp'
     ])
@@ -214,7 +214,7 @@ with tab1:
                             data=pdf_bytes,
                             file_name=f"Debug_ext_Report_{bug_data.get('priority')}.pdf",
                             mime="application/pdf",
-                            use_container_width=True,
+                            width="stretch",
                             type="primary"
                         )
                         
@@ -277,11 +277,11 @@ with tab2:
         # Add Visual Analytics Chart
         st.markdown("##### Most Vulnerable Modules")
         # Check if df is not empty AND the column actually exists
-        if not df.empty and 'affected_component' in df.columns:
-            valid_mods = df[~df['affected_component'].isin(['Unknown', 'unknown', 'N/A', '', None])]
+        if not df.empty and 'component' in df.columns:
+            valid_mods = df[~df['component'].isin(['Unknown', 'unknown', 'N/A', '', None])]
             
             if not valid_mods.empty:
-                mod_counts = valid_mods['affected_component'].value_counts().reset_index()
+                mod_counts = valid_mods['component'].value_counts().reset_index()
                 mod_counts.columns = ['Component', 'Failures']
                 
                 fig_bar = px.bar(
@@ -297,7 +297,7 @@ with tab2:
                     yaxis=dict(title=""),
                     margin=dict(l=20, r=20, t=20, b=40)
                 )
-                st.plotly_chart(fig_bar, use_container_width=True)
+                st.plotly_chart(fig_bar, width="stretch")
             else:
                 st.info("No module data available yet.")
         else:
