@@ -214,7 +214,8 @@ with tab1:
                             data=pdf_bytes,
                             file_name=f"Debug_ext_Report_{bug_data.get('priority')}.pdf",
                             mime="application/pdf",
-                            width="stretch"
+                            use_container_width=True,
+                            type="primary"
                         )
                         
                         with st.expander("View Full Raw JSON Result"):
