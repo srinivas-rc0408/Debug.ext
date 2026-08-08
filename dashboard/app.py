@@ -29,6 +29,38 @@ st.markdown("""
     /* Absolute Black Background */
     .stApp { background-color: #000000; color: #F8FAFC; font-family: 'Inter', sans-serif; }
     
+    /* Elegant Spacing for Uploader and Text Areas */
+    .stFileUploader, .stTextArea {
+        margin-bottom: 24px !important;
+        padding-top: 8px !important;
+    }
+    
+    /* Pro-Tier Button Styling */
+    div.stButton > button {
+        background: linear-gradient(135deg, #4F46E5 0%, #3730A3 100%);
+        color: white !important;
+        border: none;
+        border-radius: 8px;
+        padding: 12px 24px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        transition: all 0.3s ease;
+        margin-top: 10px;
+        box-shadow: 0 4px 15px rgba(79, 70, 229, 0.2);
+    }
+    div.stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4);
+    }
+    
+    /* Cleaner Expander Borders */
+    div[data-testid="stExpander"] {
+        background-color: #0A0A0A;
+        border: 1px solid #1E293B;
+        border-radius: 8px;
+        margin-bottom: 16px;
+    }
+    
     /* Graphite Metric Cards with Neon Borders */
     .metric-card {
         background-color: #0A0A0A;
@@ -152,6 +184,51 @@ def load_history():
 df = load_history()
 
 # ==========================================
+# 🚀 THE INSTANT HIGHLIGHT BLOCK
+# ==========================================
+if not df.empty:
+    # Grab the absolute latest bug processed by the AI
+    latest_bug = df.iloc[0] # Assumes backend returns newest first
+    
+    st.markdown("""
+    <div style="background: linear-gradient(90deg, #1E293B 0%, #0F172A 100%); 
+                padding: 20px; border-radius: 12px; border-left: 4px solid #EF4444; margin-bottom: 25px;">
+        <h4 style="margin-top: 0; color: #F8FAFC;">🚨 Latest Intercepted Exception</h4>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    hl_col1, hl_col2 = st.columns([3, 1])
+    
+    with hl_col1:
+        st.markdown(f"**Priority:** `[{latest_bug.get('priority', 'P0')}]` | **Severity:** `{latest_bug.get('severity', 'Critical')}`")
+        st.markdown(f"**Category:** `{latest_bug.get('category', 'Unknown')}`")
+        st.info(f"**Root Cause:** {latest_bug.get('probable_root_cause', 'N/A')}")
+        
+    with hl_col2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        # Generate the PDF in real-time for the latest bug
+        from pdf_generator import generate_pdf_report
+        
+        # Convert pandas row back to a clean dictionary for the PDF generator
+        bug_dict = latest_bug.to_dict()
+        
+        try:
+            pdf_bytes = generate_pdf_report(bug_dict)
+            st.download_button(
+                label="📄 Download PDF Report",
+                data=pdf_bytes,
+                file_name=f"Debug_ext_Report_{bug_dict.get('priority', 'P0')}.pdf",
+                mime="application/pdf",
+                width="stretch",
+                type="primary",
+                key="highlight_download"
+            )
+        except Exception as e:
+            st.error("PDF engine rendering...")
+
+    st.divider()
+
+# ==========================================
 # HEADER
 # ==========================================
 _logo_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'logo.png')
@@ -186,6 +263,7 @@ tab1, tab2 = st.tabs(["🚀 Live Triage & Upload", "🗄️ Bug History"])
 with tab1:
     st.subheader("📥 Omni-Format QA Ingestion Engine")
     st.caption("Upload unstructured error dumps, customer tickets, or tabular QA logs.")
+    st.markdown("<br>", unsafe_allow_html=True) # Adds breathing room
     
     # 1. UNLOCK ALL FILE TYPES
     allowed_types = ['txt', 'log', 'json', 'csv', 'md', 'xml']
@@ -194,9 +272,12 @@ with tab1:
         type=allowed_types
     )
     
+    st.markdown("<br>", unsafe_allow_html=True) # Separates uploader from text area
     raw_text = st.text_area("Or paste raw text/stack trace directly:", height=150)
     
-    if st.button("🚀 Run AI Triage & Generate Report", width="stretch"):
+    st.markdown("<br>", unsafe_allow_html=True) # Separates text area from button
+    
+    if st.button("🚀 Run Autonomous AI Triage", width="stretch"):
         payload_text = ""
         
         # 2. BULLETPROOF PARSING

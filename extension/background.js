@@ -37,7 +37,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                             // PRO FIX: Force open the dashboard if an error didn't already trigger it
                             if (!isRouting) {
                                 isRouting = true;
-                                chrome.tabs.create({ url: "http://localhost:8501" });
+                                chrome.tabs.create({ url: "http://localhost:8501", active: true });
                             }
                         }, 15000); // 15 seconds
                     });
@@ -62,6 +62,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // Update cooldown timer
         lastAlertTime = now;
         const errorData = request.payload;
+        isRouting = true; // Lock routing so the 15s timer doesn't interrupt
+
+        // Visual indicator that AI is thinking
+        chrome.action.setBadgeText({ text: '...' });
+        chrome.action.setBadgeBackgroundColor({ color: '#F59E0B' }); // Amber
 
         // Create a SINGLETON Notification (using a static ID prevents stacking)
         const notificationId = 'debug-ext-master-alert';
@@ -77,7 +82,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             });
         });
 
-        // Send to FastAPI Gateway
+        // 🚀 CRITICAL FIX: The fetch block
         fetch('http://localhost:8000/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -91,19 +96,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         .then(data => {
             // Store analysis and update the extension badge
             chrome.storage.local.set({ latestAnalysis: data });
-            // 1. SILENTLY UPDATE EXTENSION STATE
+            // AI is finished prioritizing
             chrome.action.setBadgeText({ text: '1' });
-            chrome.action.setBadgeBackgroundColor({ color: '#EF4444' });
+            chrome.action.setBadgeBackgroundColor({ color: '#EF4444' }); // Red
             chrome.notifications.update(notificationId, { 
                 message: `Analysis Complete! Priority: ${data.priority}` 
             });
             
-            // 2. STRICT BARRIER: ONLY OPEN DASHBOARD NOW
-            if (!isRouting) {
-                isRouting = true;
-                chrome.tabs.create({ url: "http://localhost:8501" });
-            }
+            // 🚀 ONLY open the tab AFTER the categorization is complete
+            chrome.tabs.create({ url: "http://localhost:8501", active: true });
         })
-        .catch(err => console.error('Backend connection error:', err));
+        .catch(err => {
+            console.error('API Error:', err);
+            // Fallback: Open tab even if offline mode triggers
+            chrome.tabs.create({ url: "http://localhost:8501", active: true });
+        });
     }
 });
