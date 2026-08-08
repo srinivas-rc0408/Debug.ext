@@ -93,6 +93,14 @@ st.markdown("""
 # 2. SIDEBAR & LIVE REFRESH
 # ==========================================
 with st.sidebar:
+    st.markdown("### ⚙️ Workspace Controls")
+    if st.button("🔄 Reset Live Session", width="stretch"):
+        # Clears the temporary memory for a fresh demo
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()
+    st.divider()
+
     st.markdown("### ⚙️ Dashboard Settings")
     live_mode = st.toggle("🔴 Live Mode (Auto-Refresh)", value=False, help="Enable to auto-refresh during live demos. New errors appear automatically.")
     refresh_interval = st.select_slider("Refresh Interval", options=[3, 5, 10, 15, 30], value=5, format_func=lambda x: f"{x}s", disabled=not live_mode)
@@ -127,6 +135,9 @@ def load_history():
             if not df.empty:
                 df['confidence_pct'] = df['confidence'].apply(lambda x: int(x * 100) if x <= 1.0 else int(x))
                 return df
+    except requests.exceptions.ConnectionError:
+        # Fails gracefully without a red crash screen
+        st.sidebar.error("⚠️ AI Gateway Offline. Check backend server.")
     except Exception:
         pass
     

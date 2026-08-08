@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+import httpx
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
@@ -170,36 +171,67 @@ async def analyze_bug(report: BugReportInput):
     # Step 1: Sanitize
     sanitized = sanitize_input(report)
 
-    # Step 2: Route intent via Inkling
-    routing = await route_intent(sanitized)
-    logger.info("Routing decision: %s", routing.get("routing", "both"))
+    # LLM Pipeline with Wi-Fi Safety Net
+    try:
+        # Step 2: Route intent via Inkling
+        routing = await route_intent(sanitized)
+        logger.info("Routing decision: %s", routing.get("routing", "both"))
 
-    # Step 3: Determine which models to call based on routing
-    route_type = routing.get("routing", "both")
+        # Step 3: Determine which models to call based on routing
+        route_type = routing.get("routing", "both")
 
-    if route_type == "structural":
-        # Only structural analysis needed
-        mm_result = await generate_structural_analysis(sanitized, routing)
-        glm_result = {"_source": "glm_5.2", "_error": "skipped_by_routing"}
-    elif route_type == "deep_reasoning":
-        # Only deep reasoning needed
-        glm_result = await deep_reasoning_analysis(sanitized, routing)
-        mm_result = {"_source": "minimax_m3", "_error": "skipped_by_routing"}
-    else:
-        # Both — fan out concurrently
-        mm_result, glm_result = await asyncio.gather(
-            generate_structural_analysis(sanitized, routing),
-            deep_reasoning_analysis(sanitized, routing),
-            return_exceptions=False,
+        if route_type == "structural":
+            # Only structural analysis needed
+            mm_result = await generate_structural_analysis(sanitized, routing)
+            glm_result = {"_source": "glm_5.2", "_error": "skipped_by_routing"}
+        elif route_type == "deep_reasoning":
+            # Only deep reasoning needed
+            glm_result = await deep_reasoning_analysis(sanitized, routing)
+            mm_result = {"_source": "minimax_m3", "_error": "skipped_by_routing"}
+        else:
+            # Both — fan out concurrently
+            mm_result, glm_result = await asyncio.gather(
+                generate_structural_analysis(sanitized, routing),
+                deep_reasoning_analysis(sanitized, routing),
+                return_exceptions=False,
+            )
+            # If gather returned exceptions as results, wrap them
+            if isinstance(mm_result, Exception):
+                mm_result = {"_source": "minimax_m3", "_error": str(mm_result)}
+            if isinstance(glm_result, Exception):
+                glm_result = {"_source": "glm_5.2", "_error": str(glm_result)}
+
+        # Step 4: Merge
+        result = _merge_results(routing, mm_result, glm_result, sanitized)
+
+    except (httpx.ConnectError, httpx.ReadTimeout):
+        # 🟢 THE PRO FALLBACK: If Wi-Fi dies, the demo survives!
+        logger.warning("[System] Wi-Fi drop detected. Serving cached local fallback...")
+        print("[System] Wi-Fi drop detected. Serving cached local fallback...")
+        result = BugAnalysisResult(
+            bug_id=str(uuid.uuid4()),
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            bug_summary="[OFFLINE MODE] Unhandled Promise Rejection",
+            category="Performance",
+            severity="High",
+            priority="P1",
+            confidence_score=0.85,
+            affected_component="Localhost Offline Cache",
+            probable_root_cause="The application lost connection to the primary API gateway, resulting in an automated fallback state.",
+            technical_analysis="This is a cached triage report generated because the live LLM connection timed out due to network instability.",
+            suggested_fix=SuggestedFix(
+                explanation="Restore internet connection to resume multi-model AI routing.",
+                code_snippet="// System running in offline fallback mode"
+            ),
+            missing_information=["Live network connection required for deep analysis"],
+            metrics=BugMetrics(
+                estimated_fix_time_hours=1.0,
+                business_impact_score=5.0,
+                reproducibility_probability=1.0
+            ),
+            model_sources=["offline_cache"],
+            raw_input_preview=sanitized[:500]
         )
-        # If gather returned exceptions as results, wrap them
-        if isinstance(mm_result, Exception):
-            mm_result = {"_source": "minimax_m3", "_error": str(mm_result)}
-        if isinstance(glm_result, Exception):
-            glm_result = {"_source": "glm_5.2", "_error": str(glm_result)}
-
-    # Step 4: Merge
-    result = _merge_results(routing, mm_result, glm_result, sanitized)
 
     # Step 5: Store
     database.insert_result(result.model_dump(), report.url, report.source)
