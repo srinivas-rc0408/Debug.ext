@@ -1,121 +1,187 @@
-import tempfile
-import json
-from fpdf import FPDF
+from __future__ import annotations
+
+import sys
+import os
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SHARED_DIR = os.path.join(BASE_DIR, "..", "shared")
+sys.path.append(SHARED_DIR)
+
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
-class ReportPDF(FPDF):
-    def __init__(self):
-        super().__init__(format='A4')
-        self.set_margins(left=20, top=20, right=20)
+from fpdf import FPDF
+from fpdf.enums import XPos, YPos
+
+from triage_prompt_engine import TriageReport
+
+# ---- Palette, matched to your brief's "Silicon Valley SaaS Aesthetic" ----
+COLOR_BG_CODE = (15, 23, 42)       # #0F172A dark terminal block
+COLOR_TEXT_CODE = (56, 189, 248)   # #38BDF8 neon blue
+COLOR_HEADER = (10, 10, 10)        # #0A0A0A graphite
+COLOR_WHITE = (255, 255, 255)
+COLOR_MUTED = (110, 110, 110)
+
+PRIORITY_COLORS = {
+    "P0": (220, 38, 38),   # red — critical
+    "P1": (234, 88, 12),   # orange — high
+    "P2": (202, 138, 4),   # amber — medium
+    "P3": (22, 163, 74),   # green — low
+}
+
+SECTION_TITLES = [
+    "1. Incident Summary & Target Context",
+    "2. Probable Root Cause Analysis",
+    "3. Technical Execution Breakdown",
+    "4. Verified Solution & Code Patch",
+    "5. QA Verification Checklist",
+]
+
+
+class DebugExtPDF(FPDF):
+    """Overrides header()/footer() so every page auto-matches the sample layout."""
+
+    def __init__(self, priority: str, category: str, confidence: int):
+        super().__init__(format="A4")
+        self.priority = priority
+        self.category = category
+        self.confidence = confidence
         self.set_auto_page_break(auto=True, margin=20)
+        self.set_margins(20, 20, 20)
 
-    def header(self):
-        self.set_font("helvetica", "B", 18)
-        self.set_text_color(79, 70, 229)
-        self.cell(0, 10, "Debug.ext | Executive AI Intelligence Report", ln=True, align="L")
-        
-        self.set_font("helvetica", "I", 9)
-        self.set_text_color(100, 116, 139)
-        self.cell(0, 5, f"Autonomous Verification Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST", ln=True, align="L")
-        self.set_draw_color(79, 70, 229)
-        self.set_line_width(0.4)
-        self.line(20, 32, 190, 32)
-        self.ln(8)
-        
-    def footer(self):
-        self.set_y(-15)
-        self.set_font("helvetica", "I", 8)
-        self.set_text_color(148, 163, 184)
-        self.cell(0, 10, f"Page {self.page_no()} | Debug.ext Universal Triage Core", 0, 0, "C")
+    def header(self) -> None:
+        self.set_font("Helvetica", "B", 13)
+        self.set_text_color(*COLOR_HEADER)
+        self.cell(0, 8, "Debug.ext | Executive AI Intelligence Report", ln=1)
 
-    def chapter_title(self, title):
-        self.ln(4)
-        self.set_font("helvetica", "B", 11)
-        self.set_text_color(15, 23, 42)
-        self.cell(0, 7, title, ln=True)
-        self.set_draw_color(203, 213, 225)
-        self.set_line_width(0.2)
+        timestamp = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S IST")
+        self.set_font("Helvetica", "", 9)
+        self.set_text_color(*COLOR_MUTED)
+        self.cell(0, 6, f"Autonomous Verification Timestamp: {timestamp}", ln=1)
+
+        badge_color = PRIORITY_COLORS.get(self.priority, (100, 100, 100))
+        self.set_font("Helvetica", "B", 11)
+        self.set_text_color(*badge_color)
+        self.cell(0, 8, f"[{self.priority}] {self._priority_label()} Priority Incident", ln=1)
+
+        self.set_font("Helvetica", "", 10)
+        self.set_text_color(*COLOR_HEADER)
+        self.cell(0, 6, f"Category {self.category}    AI Confidence {self.confidence}%", ln=1)
+        self.ln(2)
+        self.set_draw_color(200, 200, 200)
         self.line(20, self.get_y(), 190, self.get_y())
-        self.ln(2)
+        self.ln(4)
 
-    def chapter_body(self, body):
-        self.set_font("helvetica", "", 10)
-        self.set_text_color(51, 65, 85)
-        self.multi_cell(0, 5, body)
-        self.ln(2)
+    def footer(self) -> None:
+        self.set_y(-15)
+        self.set_font("Helvetica", "I", 8)
+        self.set_text_color(*COLOR_MUTED)
+        self.cell(0, 10, f"Page {self.page_no()} | Debug.ext Universal Triage Core", align="L")
 
-def sanitize(text):
-    if not text:
-        return "N/A"
-    return str(text).encode('latin-1', 'replace').decode('latin-1')
+    def _priority_label(self) -> str:
+        return {"P0": "Critical", "P1": "High", "P2": "Medium", "P3": "Low"}.get(self.priority, "")
 
-def generate_pdf_report(bug_data: dict) -> bytes:
-    if isinstance(bug_data.get('full_json'), str):
-        try:
-            nested = json.loads(bug_data['full_json'])
-            bug_data = {**bug_data, **nested}
-        except:
-            pass
+    def section_title(self, title: str) -> None:
+        self.set_font("Helvetica", "B", 12)
+        self.set_text_color(*COLOR_HEADER)
+        self.cell(0, 8, title, ln=1)
+        self.ln(1)
 
-    pdf = ReportPDF()
+    def body_paragraph(self, text: str) -> None:
+        self.set_font("Helvetica", "", 10.5)
+        self.set_text_color(30, 30, 30)
+        self.multi_cell(0, 6, text, align="L", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.ln(3)
+
+    def numbered_list(self, items: list[str]) -> None:
+        self.set_text_color(30, 30, 30)
+        for i, item in enumerate(items, start=1):
+            self.set_font("Helvetica", "B", 10.5)
+            prefix = f"{i}) "
+            prefix_w = self.get_string_width(prefix) + 1
+            self.cell(prefix_w, 6, prefix, new_x=XPos.RIGHT, new_y=YPos.TOP)
+            self.set_font("Helvetica", "", 10.5)
+            self.multi_cell(0, 6, item, align="L", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.ln(3)
+
+    def checklist(self, items: list[str]) -> None:
+        self.set_font("Helvetica", "", 10.5)
+        self.set_text_color(30, 30, 30)
+        for item in items:
+            self.multi_cell(0, 6, f"[ ]  {item}", align="L", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.ln(3)
+
+    def _wrap_code_line(self, line: str, max_chars: int) -> list[str]:
+        if len(line) <= max_chars or max_chars <= 4:
+            return [line] if line else [""]
+        rows = [line[:max_chars]]
+        rest = line[max_chars:]
+        cont_max = max_chars - 2
+        while rest:
+            rows.append("  " + rest[:cont_max])
+            rest = rest[cont_max:]
+        return rows
+
+    def code_block(self, filename: str, language: str, code: str) -> None:
+        self.set_font("Helvetica", "I", 9)
+        self.set_text_color(*COLOR_MUTED)
+        self.cell(0, 6, f"// {filename} ({language})", ln=1)
+
+        self.set_font("Courier", "", 9.5)
+        line_height = 5
+        text_width_mm = 166 
+        char_w = self.get_string_width("M")
+        max_chars = max(10, int(text_width_mm / char_w))
+
+        display_rows: list[str] = []
+        for logical_line in code.split("\n"):
+            display_rows.extend(self._wrap_code_line(logical_line, max_chars))
+
+        i = 0
+        while i < len(display_rows):
+            available_h = self.h - self.b_margin - self.get_y()
+            max_lines_this_page = max(1, int(available_h // line_height))
+            chunk = display_rows[i : i + max_lines_this_page]
+
+            block_h = line_height * len(chunk)
+            self.set_fill_color(*COLOR_BG_CODE)
+            self.set_text_color(*COLOR_TEXT_CODE)
+            x, y = self.get_x(), self.get_y()
+            self.rect(x, y, 170, block_h, style="F")
+            self.set_xy(x + 2, y + 1)
+            for row in chunk:
+                self.set_x(x + 2)
+                self.cell(166, line_height, row, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+            i += max_lines_this_page
+            self.set_xy(x, self.get_y())
+            if i < len(display_rows):
+                self.add_page()
+
+        self.set_text_color(30, 30, 30)
+        self.ln(4)
+
+
+def generate_triage_pdf(report: TriageReport) -> bytes:
+    pdf = DebugExtPDF(priority=report.priority, category=report.category, confidence=report.confidence)
     pdf.add_page()
-    
-    # Priority & Severity Badge
-    pdf.set_font("helvetica", "B", 10)
-    pdf.set_fill_color(254, 226, 226)
-    pdf.set_text_color(220, 38, 38)
-    pdf.set_draw_color(248, 113, 113)
-    pri = bug_data.get('priority', 'P0')
-    sev = bug_data.get('severity', 'Critical')
-    badge_text = f" [{pri}] {sev} Priority Incident "
-    pdf.cell(pdf.get_string_width(badge_text) + 4, 7, badge_text, border=1, fill=True, ln=True)
-    pdf.ln(3)
 
-    # Metadata Grid Table
-    pdf.set_font("helvetica", "B", 9)
-    pdf.set_fill_color(241, 245, 249)
-    pdf.set_text_color(15, 23, 42)
-    
-    pdf.cell(32, 6, " Category", border=1, fill=True)
-    pdf.set_font("helvetica", "", 9)
-    pdf.cell(63, 6, f" {sanitize(bug_data.get('category', 'General'))}", border=1)
-    
-    pdf.set_font("helvetica", "B", 9)
-    pdf.cell(32, 6, " AI Confidence", border=1, fill=True)
-    pdf.set_font("helvetica", "", 9)
-    conf = bug_data.get('confidence_score', 0.96)
-    conf_pct = int(conf * 100) if conf <= 1 else int(conf)
-    pdf.cell(43, 6, f" {conf_pct}%", border=1, ln=True)
-    pdf.ln(5)
+    pdf.section_title(SECTION_TITLES[0])
+    pdf.body_paragraph(report.incident_summary)
 
-    # Report Sections
-    pdf.chapter_title("1. Incident Summary & Target Context")
-    pdf.chapter_body(sanitize(bug_data.get('bug_summary', 'Universal Target Interception')))
-    
-    pdf.chapter_title("2. Probable Root Cause Analysis")
-    pdf.chapter_body(sanitize(bug_data.get('probable_root_cause', 'N/A')))
-    
-    pdf.chapter_title("3. Technical Execution Breakdown")
-    pdf.chapter_body(sanitize(bug_data.get('technical_analysis', 'Analyzed via multi-model telemetry core.')))
-    
-    pdf.chapter_title("4. Verified Solution & Code Patch")
-    fix_data = bug_data.get('suggested_fix', {})
-    if isinstance(fix_data, str):
-        try: fix_data = json.loads(fix_data)
-        except: fix_data = {"explanation": fix_data, "code_snippet": "// Patch applied"}
-        
-    explanation = fix_data.get('explanation', 'Apply the following verified code fix:')
-    code_snippet = fix_data.get('code_snippet', '// No code patch required')
-    
-    pdf.chapter_body(sanitize(explanation))
-    
-    pdf.set_font("courier", "", 9)
-    pdf.set_fill_color(15, 23, 42)
-    pdf.set_text_color(56, 189, 248)
-    pdf.multi_cell(0, 5, sanitize(f"  {code_snippet}"), fill=True, border=1)
-    pdf.ln(4)
+    pdf.section_title(SECTION_TITLES[1])
+    pdf.body_paragraph(report.root_cause_analysis)
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        pdf.output(tmp.name)
-        tmp.seek(0)
-        return tmp.read()
+    pdf.section_title(SECTION_TITLES[2])
+    pdf.numbered_list(report.technical_execution_breakdown)
+
+    pdf.section_title(SECTION_TITLES[3])
+    pdf.body_paragraph(report.solution_summary)
+    if report.config_notes:
+        pdf.body_paragraph(f"Config note: {report.config_notes}")
+    pdf.code_block(report.code_patch.filename, report.code_patch.language, report.code_patch.code)
+
+    pdf.section_title(SECTION_TITLES[4])
+    pdf.checklist(report.qa_checklist)
+
+    raw = pdf.output(dest="S")
+    return bytes(raw)
