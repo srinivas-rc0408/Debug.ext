@@ -5,6 +5,7 @@ from streamlit_autorefresh import st_autorefresh
 import requests
 import json
 import base64
+import os
 
 # Import unified PDF generators safely
 from pdf_generator import generate_pdf_report, generate_triage_pdf
@@ -33,7 +34,8 @@ st.markdown("""
 @st.cache_data(ttl=1)
 def fetch_and_normalize_history():
     try:
-        res = requests.get("http://localhost:8000/api/history", timeout=2)
+        backend_url = os.environ.get("BACKEND_URL", "http://localhost:8000")
+        res = requests.get(f"{backend_url}/api/history", timeout=2)
         if res.status_code == 200 and res.json():
             raw_data = res.json()
             processed_rows = []
