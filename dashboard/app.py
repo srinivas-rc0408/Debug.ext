@@ -244,6 +244,10 @@ if not df.empty:
     
     # We use a completely new container to drop in the final UI
     with st.container():
+        # Safely handle keys whether they are named 'bug_summary' or 'summary'
+        summary_text = latest_bug.get('bug_summary', latest_bug.get('summary', 'Active Incident'))
+        component_text = latest_bug.get('affected_component', latest_bug.get('url', 'Unknown Module'))
+        
         st.markdown("""
         <div style="background: linear-gradient(90deg, #1E293B 0%, #0F172A 100%); 
                     padding: 16px 24px; border-radius: 12px; border-left: 5px solid #10B981; margin-bottom: 20px;">
@@ -255,12 +259,16 @@ if not df.empty:
         
         with col_details:
             st.markdown("#### 📊 Intelligence Matrix")
-            st.markdown(f"**Priority:** `<span style='color:#EF4444; font-weight:bold;'>[{latest_bug.get('priority', 'P0')}]</span>` | **Severity:** `{latest_bug.get('severity', 'Critical')}`", unsafe_allow_html=True)
+            
+            # 🟢 CRITICAL FIX: Added unsafe_allow_html=True so the color tags render properly!
+            priority_html = f"<span style='color:#EF4444; font-weight:bold;'>[{latest_bug.get('priority', 'P0')}]</span>"
+            st.markdown(f"**Priority:** {priority_html} | **Severity:** `{latest_bug.get('severity', 'Critical')}`", unsafe_allow_html=True)
+            
             st.markdown(f"**Category:** `{latest_bug.get('category', 'Unknown')}`")
-            st.markdown(f"**Module:** `{latest_bug.get('affected_component', 'Unknown')}`")
+            st.markdown(f"**Module:** `{component_text}`")
             
             st.markdown("#### 🔍 Root Cause")
-            st.info(latest_bug.get('probable_root_cause', 'N/A'))
+            st.info(latest_bug.get('probable_root_cause', summary_text))
             
             from pdf_generator import generate_pdf_report
             try:
@@ -273,12 +281,13 @@ if not df.empty:
                     width="stretch",
                     type="primary"
                 )
-            except:
-                st.error("PDF Engine Offline")
+            except Exception as e:
+                st.error(f"PDF Engine Error: {e}")
 
         with col_fix:
             st.markdown("#### 🛠️ Autonomous Code Patch")
             fix_data = latest_bug.get('suggested_fix', {})
+            
             if isinstance(fix_data, dict):
                 st.write(fix_data.get('explanation', 'Apply the following fix:'))
                 code = fix_data.get('code_snippet', '// No code provided')
@@ -289,24 +298,25 @@ if not df.empty:
         st.divider()
 
     # ==========================================
-    # 📋 2. THE ERROR LOG TABLE
+    # 📋 2. CRASH-PROOF SESSION ERROR LOG TABLE
     # ==========================================
     st.markdown("### 📋 Session Error Log")
     st.caption("Complete history of intercepted exceptions, categorized and prioritized.")
     
-    # Render a beautiful, interactive SaaS data table
-    st.dataframe(
-        df[['priority', 'severity', 'category', 'bug_summary', 'affected_component']],
-        column_config={
-            "priority": st.column_config.TextColumn("Priority", width="small"),
-            "severity": st.column_config.TextColumn("Severity", width="small"),
-            "category": st.column_config.TextColumn("Category", width="medium"),
-            "bug_summary": st.column_config.TextColumn("Exception Trace", width="large"),
-            "affected_component": st.column_config.TextColumn("Module", width="medium")
-        },
-        use_container_width=True,
-        hide_index=True
-    )
+    # 🟢 DYNAMIC COLUMN CHECKER: Prevents KeyError if column names differ in SQLite
+    available_cols = df.columns.tolist()
+    target_cols = ['priority', 'severity', 'category', 'bug_summary', 'summary', 'affected_component', 'url']
+    valid_display_cols = [col for col in target_cols if col in available_cols]
+    
+    if valid_display_cols:
+        st.dataframe(
+            df[valid_display_cols],
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        
     st.markdown("<br><br>", unsafe_allow_html=True)
 
 # ==========================================
